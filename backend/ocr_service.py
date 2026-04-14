@@ -1,20 +1,24 @@
 from __future__ import annotations
 
+import datetime
 import io
 import os
 import re
 import tempfile
+from types import SimpleNamespace
 
 import numpy as np
 from PIL import Image
 import pytesseract
 import joblib
-from bs4 import BeautifulSoup
 from paddleocr import TableRecognitionPipelineV2
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import normalize as sk_normalize
 from sklearn.datasets import fetch_20newsgroups
 import gensim.downloader as gensim_api
+
+from structured_doc_utils import collect_document_result
+from normalized_document_parser import normalize_document_result
 
 # ---------------------------------------------------------------------------
 # Engine — loaded once at import time
@@ -154,14 +158,54 @@ def run_ocr(
     if not file_bytes:
         raise ValueError("Uploaded file is empty.")
 
+    source = filename or "document"
+    suffix = _sniff_suffix(file_bytes)
+
+    # Run the table/layout engine
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+    try:
+        engine_results = list(table_engine.predict(tmp_path))
+    finally:
+        os.unlink(tmp_path)
+
+    # Extract table bounding boxes so pytesseract can avoid them
+    table_bboxes = _get_table_bboxes(engine_results)
+
+    # Run pytesseract on the non-table regions for free text
     img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-    tables, table_bboxes = _extract_tables(file_bytes)
     raw_text = _extract_raw_text(img, table_bboxes)
 
-    all_rows = [row for table in tables for row in table["rows"]]
+    # Wrap each engine result with the pytesseract text as its markdown so
+    # collect_document_result can use both the table HTML and the OCR text.
+    # Only the first page gets the raw text; subsequent pages get "".
+    wrapped = [
+        SimpleNamespace(json=r.json, markdown=raw_text if i == 0 else "")
+        for i, r in enumerate(engine_results)
+    ]
+    if not wrapped:
+        wrapped = [SimpleNamespace(json={}, markdown=raw_text)]
+
+    processing = {
+        "ocr_mode": mode,
+        "ocr_mode_label": (mode or "").capitalize(),
+        "run_timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+    }
+
+    # Build the structured document result the frontend expects
+    doc_result = collect_document_result(wrapped, source=source, processing=processing)
+    doc_result["processing"] = processing
+
+    # Normalize into key_facts / tables / ocr_text blocks
+    doc_result["normalized_document"] = normalize_document_result(doc_result)
+
+    # Build the flat text used for ML (pytesseract text + all table cell text)
+    all_tables = doc_result.get("tables") or []
+    all_rows   = [row for t in all_tables for row in (t.get("rows") or []) if isinstance(row, list)]
 
     text_word_count  = len(raw_text.split())
-    table_word_count = sum(len(cell.split()) for row in all_rows for cell in row)
+    table_word_count = sum(len(str(cell).split()) for row in all_rows for cell in row)
     total_word_count = text_word_count + table_word_count
     features = {
         "table_row_count":   len(all_rows),
@@ -169,7 +213,7 @@ def run_ocr(
         "avg_cells_per_row": round(sum(len(row) for row in all_rows) / len(all_rows), 4) if all_rows else 0.0,
     }
 
-    table_text      = " ".join(cell for row in all_rows for cell in row)
+    table_text      = " ".join(str(cell) for row in all_rows for cell in row)
     flat_text       = " ".join(filter(None, [raw_text, table_text]))
     normalized_text = _normalize(flat_text)
 
@@ -177,7 +221,6 @@ def run_ocr(
     v2 = _version2_tfidf_w2v(normalized_text)
     v3 = _version3_w2v(normalized_text)
 
-    # Run both classifiers independently on the same text + features
     svm_prediction = _run_prediction(
         _svm_classifier, _svm_tfidf, _svm_label_enc, normalized_text, features
     )
@@ -185,23 +228,16 @@ def run_ocr(
         _lr_classifier, _lr_tfidf, _lr_label_enc, normalized_text, features
     )
 
-    tables_html = [t["html"] for t in tables if t.get("html")]
-    return {
-        "text":        normalized_text,
-        "features":    features,
-        "tables_html": tables_html,
-        "tfidf":       v1,
-        "tfidf_w2v":   v2,
-        "w2v":         v3,
-
-        # SVM prediction (CV mean=100% ± 0% — more stable)
-        # e.g. {"label": "Eligibility Evidence", "confidence": 0.94, "all_probs": {...}}
+    doc_result.update({
+        "features":       features,
+        "tfidf":          v1,
+        "tfidf_w2v":      v2,
+        "w2v":            v3,
         "svm_prediction": svm_prediction,
-
-        # LR prediction  (CV mean=91%  ± 8.6%)
-        # e.g. {"label": "Eligibility Evidence", "confidence": 0.78, "all_probs": {...}}
         "lr_prediction":  lr_prediction,
-    }
+    })
+
+    return doc_result
 
 
 # ---------------------------------------------------------------------------
@@ -319,52 +355,21 @@ def _clean_tokens(text: str) -> list[str]:
     return [t.lower() for t in text.split() if t.isalpha() and len(t) > 2]
 
 
-def _extract_tables(image_bytes: bytes):
-    suffix = _sniff_suffix(image_bytes)
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(image_bytes)
-        tmp_path = tmp.name
-    try:
-        result = table_engine.predict(tmp_path)
-    finally:
-        os.unlink(tmp_path)
-
-    tables       = []
+def _get_table_bboxes(engine_results: list) -> list:
+    """Return [x1,y1,x2,y2] bounding boxes for every table detected by the engine."""
     table_bboxes = []
-
-    for res in result:
-        inner          = res.json.get("res", {})
+    for res in engine_results:
+        json_data = res.json if isinstance(getattr(res, "json", None), dict) else {}
+        inner     = json_data.get("res", json_data)
         boxes          = inner.get("layout_det_res", {}).get("boxes", [])
         table_res_list = inner.get("table_res_list", [])
-
-        table_boxes                 = [b for b in boxes if b.get("label") == "table"]
+        table_boxes    = [b for b in boxes if b.get("label") == "table"]
         table_boxes, table_res_list = _deduplicate_tables(table_boxes, table_res_list)
-
-        for i, table_data in enumerate(table_res_list):
+        for i in range(len(table_res_list)):
             bbox = table_boxes[i]["coordinate"] if i < len(table_boxes) else []
             if bbox:
                 table_bboxes.append(bbox)
-                tables.append({
-                    "bbox": bbox,
-                    "rows": _parse_table_rows(table_data),
-                    "html": table_data.get("pred_html", ""),
-                })
-
-    return tables, table_bboxes
-
-
-def _parse_table_rows(table_data: dict) -> list:
-    html = table_data.get("pred_html", "")
-    if not html:
-        return []
-    soup = BeautifulSoup(html, "html.parser")
-    rows = []
-    for row in soup.find_all("tr"):
-        cells = [td.get_text(strip=True) for td in row.find_all("td")]
-        cells = [c for c in cells if c]
-        if cells:
-            rows.append(cells)
-    return rows
+    return table_bboxes
 
 
 def _mask_table_regions(img: Image.Image, table_bboxes: list, padding: int = 5) -> Image.Image:
