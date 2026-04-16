@@ -29,6 +29,7 @@ Input CSVs must have columns: text, label
 """
 
 import csv
+import os
 import numpy as np
 import joblib
 from sklearn.datasets import fetch_20newsgroups
@@ -43,8 +44,8 @@ from sklearn.metrics import (
 )
 
 
-MODEL_SAVE_PATH1      = "backend/lr_model_v1.joblib"
-MODEL_SAVE_PATH2      = "backend/svm_model_v1.joblib"
+MODEL_SAVE_PATH1      = "../backend/lr_model_v1.joblib"
+MODEL_SAVE_PATH2      = "../backend/svm_model_v1.joblib"
 TRAIN_CSV            = "train.csv"
 TEST_CSV             = "test.csv"
 CONFIDENCE_THRESHOLD = 0.6   # below this → "Unknown"
@@ -55,17 +56,12 @@ N_FOLDS              = 5     # number of CV folds — increase if you have more 
 # ---------------------------------------------------------------------------
 
 def load_csv(path):
-    texts, labels, numeric = [], [], []
+    texts, labels = [], []
     with open(path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             texts.append(row["text"])
             labels.append(row["label"].strip())
-            numeric.append([
-                float(row.get("table_row_count",  0) or 0),
-                float(row.get("table_text_ratio", 0) or 0),
-                float(row.get("avg_cells_per_row",0) or 0),
-            ])
-    return texts, labels, np.array(numeric)
+    return texts, labels
 
 def normalise_label(l):
     if "state eligibility" in l.lower():
@@ -79,8 +75,8 @@ print(f"  Folds            : {N_FOLDS}")
 print(f"  Confidence threshold: {CONFIDENCE_THRESHOLD}")
 
 print("\n[1/6] Loading data...")
-train_texts, train_labels, train_numeric = load_csv(TRAIN_CSV)
-test_texts,  test_labels,  test_numeric  = load_csv(TEST_CSV)
+train_texts, train_labels = load_csv(TRAIN_CSV)
+test_texts,  test_labels  = load_csv(TEST_CSV)
 train_labels = [normalise_label(l) for l in train_labels]
 test_labels  = [normalise_label(l) for l in test_labels]
 print(f"  Train: {len(train_texts)} samples")
@@ -116,13 +112,12 @@ print(f"  Fitted on {len(corpus)} docs — vocabulary locked at {len(tfidf.vocab
 
 print("\n[3/6] Building feature vectors...")
 
-def build_features(texts, numeric):
+def build_features(texts):
     vecs = tfidf.transform(texts).toarray()     # (n, 500) — transform only
-    vecs = sk_normalize(vecs, norm="l2")        # L2-normalise rows
-    return np.hstack([vecs, numeric])           # (n, 503)
+    return sk_normalize(vecs, norm="l2")        # L2-normalise rows
 
-X_train = build_features(train_texts, train_numeric)
-X_test  = build_features(test_texts,  test_numeric)
+X_train = build_features(train_texts)
+X_test  = build_features(test_texts)
 
 le = LabelEncoder()
 y_train = le.fit_transform(train_labels)
@@ -130,7 +125,6 @@ y_test  = le.transform(test_labels)
 
 print(f"  Train feature matrix: {X_train.shape}")
 print(f"  Test  feature matrix: {X_test.shape}")
-print(f"  Breakdown: 500 TF-IDF dims + 3 numeric dims = {X_train.shape[1]} total")
 
 # ---------------------------------------------------------------------------
 # 4. K-Fold cross-validation

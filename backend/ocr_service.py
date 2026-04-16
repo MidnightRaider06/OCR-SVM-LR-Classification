@@ -121,8 +121,8 @@ def run_ocr(
     normalized_text = _normalize(flat_text)
 
     tfidf          = _compute_tfidf(normalized_text)
-    svm_prediction = _run_prediction(_svm_classifier, _svm_tfidf, _svm_label_enc, normalized_text, features)
-    lr_prediction  = _run_prediction(_lr_classifier,  _lr_tfidf,  _lr_label_enc,  normalized_text, features)
+    svm_prediction = _run_prediction(_svm_classifier, _svm_tfidf, _svm_label_enc, normalized_text)
+    lr_prediction  = _run_prediction(_lr_classifier,  _lr_tfidf,  _lr_label_enc,  normalized_text)
 
     processing = {
         "ocr_mode":       mode,
@@ -130,7 +130,7 @@ def run_ocr(
         "run_timestamp":  datetime.datetime.utcnow().isoformat() + "Z",
     }
     summary = {
-        "engine":          "PP-StructureV3",
+        "engine":          "TableRecognitionPipelineV2",
         "page_count":      1,
         "table_count":     len(tables),
         "text_characters": len(raw_text),
@@ -305,18 +305,12 @@ def _compute_tfidf(text: str, top_n: int = 20) -> dict:
         return empty
 
 
-def _run_prediction(classifier, clf_tfidf, clf_label_enc, text: str, features: dict) -> dict:
+def _run_prediction(classifier, clf_tfidf, clf_label_enc, text: str) -> dict:
     if classifier is None:
         return {"label": "unavailable", "confidence": 0.0, "all_probs": {}}
 
-    tfidf_vec = clf_tfidf.transform([text]).toarray()
-    tfidf_vec = sk_normalize(tfidf_vec, norm="l2")
-    numeric   = np.array([[
-        float(features.get("table_row_count",   0) or 0),
-        float(features.get("table_text_ratio",  0) or 0),
-        float(features.get("avg_cells_per_row", 0) or 0),
-    ]])
-    X = np.hstack([tfidf_vec, numeric])
+    X = clf_tfidf.transform([text]).toarray()
+    X = sk_normalize(X, norm="l2")
 
     probs       = classifier.predict_proba(X)[0]
     max_conf    = float(probs.max())
