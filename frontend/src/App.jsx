@@ -5,7 +5,6 @@ const EMPTY_SUMMARY = {
   engine: 'PP-StructureV3',
   page_count: 0,
   table_count: 0,
-  field_count: 0,
   text_characters: 0,
 };
 
@@ -25,13 +24,9 @@ const OCR_MODES = [
 function createEmptyResult() {
   return {
     summary: EMPTY_SUMMARY,
-    structured_fields: [],
     tables: [],
-    markdown: 'Run the pipeline to view markdown output.',
     raw_text: '',
-    pages: [],
     processing: null,
-    documents: [],
     svm_prediction: null,
     lr_prediction: null,
   };
@@ -60,7 +55,6 @@ export default function App() {
   const currentMode = OCR_MODES.find((mode) => mode.value === ocrMode) || OCR_MODES[0];
   const summary = result.summary || EMPTY_SUMMARY;
   const reportDocuments = getDocumentEntries(result);
-  const hasStructuredFields = result.structured_fields.length > 0;
   const displayTables = dedupeTables(result.tables);
   const canOpenReport = !isRunning && selectedFiles.length > 0 && reportDocuments.length > 0;
   const highlightedPreviewIndex = processingPreviewIndex ?? activePreviewIndex;
@@ -129,11 +123,7 @@ export default function App() {
 
     const files = Array.from(rawFiles || []).filter(isSupportedFile);
     if (!files.length) {
-      setStatus({
-        message: 'Upload a PDF or image file.',
-        isError: true,
-        showSpinner: false,
-      });
+      setStatus({ message: 'Upload a PDF or image file.', isError: true, showSpinner: false });
       return;
     }
 
@@ -153,12 +143,8 @@ export default function App() {
     setSelectedFiles(nextFiles);
     setBadgeStates(nextFiles.map(() => 'queued'));
     setActivePreviewIndex((currentIndex) => {
-      if (!nextFiles.length) {
-        return 0;
-      }
-      if (currentIndex > indexToRemove) {
-        return currentIndex - 1;
-      }
+      if (!nextFiles.length) return 0;
+      if (currentIndex > indexToRemove) return currentIndex - 1;
       return Math.min(currentIndex, nextFiles.length - 1);
     });
     setProcessingPreviewIndex(null);
@@ -189,26 +175,18 @@ export default function App() {
     event.stopPropagation();
     setDragging(false);
 
-    if (isRunning) {
-      return;
-    }
-
+    if (isRunning) return;
     handleFiles(getDroppedFiles(event.dataTransfer));
   }
 
   function handleFileKeyDown(event, index) {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-
+    if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     setActivePreviewIndex(index);
   }
 
   async function handleRun() {
-    if (!selectedFiles.length || isRunning) {
-      return;
-    }
+    if (!selectedFiles.length || isRunning) return;
 
     const filesToProcess = selectedFiles;
     const allResults = [];
@@ -225,9 +203,7 @@ export default function App() {
     for (let index = 0; index < filesToProcess.length; index += 1) {
       const file = filesToProcess[index];
       setProcessingPreviewIndex(index);
-      setBadgeStates((current) => current.map((state, itemIndex) => (
-        itemIndex === index ? 'running' : state
-      )));
+      setBadgeStates((current) => current.map((state, i) => (i === index ? 'running' : state)));
       setStatus({
         message: filesToProcess.length > 1
           ? `Processing ${index + 1} of ${filesToProcess.length}: ${file.name}...`
@@ -249,19 +225,11 @@ export default function App() {
 
         const data = normalizeRunResult(await response.json());
         allResults.push(data);
-        setBadgeStates((current) => current.map((state, itemIndex) => (
-          itemIndex === index ? 'done' : state
-        )));
+        setBadgeStates((current) => current.map((state, i) => (i === index ? 'done' : state)));
       } catch (error) {
         errorCount += 1;
-        setBadgeStates((current) => current.map((state, itemIndex) => (
-          itemIndex === index ? 'error' : state
-        )));
-        setStatus({
-          message: `Error on ${file.name}: ${error.message}`,
-          isError: true,
-          showSpinner: false,
-        });
+        setBadgeStates((current) => current.map((state, i) => (i === index ? 'error' : state)));
+        setStatus({ message: `Error on ${file.name}: ${error.message}`, isError: true, showSpinner: false });
       }
     }
 
@@ -272,9 +240,7 @@ export default function App() {
     setIsRunning(false);
     setProcessingPreviewIndex(null);
 
-    if (!allResults.length) {
-      return;
-    }
+    if (!allResults.length) return;
 
     setResult(mergeResults(allResults));
     setStatus({
@@ -292,21 +258,15 @@ export default function App() {
     try {
       await navigator.clipboard.writeText(content);
       setCopiedKey(key);
-      if (copyTimerRef.current) {
-        clearTimeout(copyTimerRef.current);
-      }
-      copyTimerRef.current = window.setTimeout(() => {
-        setCopiedKey('');
-      }, 1500);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = window.setTimeout(() => setCopiedKey(''), 1500);
     } catch {
       // Clipboard access is optional in this demo.
     }
   }
 
   async function handleOpenReport() {
-    if (!canOpenReport || reportState.isGenerating) {
-      return;
-    }
+    if (!canOpenReport || reportState.isGenerating) return;
 
     const previewTab = window.open('', '_blank');
     if (previewTab) {
@@ -325,9 +285,7 @@ export default function App() {
         modeLabel: result.processing?.ocr_mode_label || currentMode.label,
       });
 
-      if (reportUrlRef.current) {
-        URL.revokeObjectURL(reportUrlRef.current);
-      }
+      if (reportUrlRef.current) URL.revokeObjectURL(reportUrlRef.current);
 
       const reportUrl = URL.createObjectURL(pdfBlob);
       reportUrlRef.current = reportUrl;
@@ -338,16 +296,9 @@ export default function App() {
         throw new Error('Allow pop-ups to open the PDF report.');
       }
 
-      setReportState({
-        message: 'Report PDF opened in a new tab.',
-        isError: false,
-        isGenerating: false,
-      });
+      setReportState({ message: 'Report PDF opened in a new tab.', isError: false, isGenerating: false });
     } catch (error) {
-      if (previewTab && !previewTab.closed) {
-        previewTab.close();
-      }
-
+      if (previewTab && !previewTab.closed) previewTab.close();
       setReportState({
         message: error?.message || 'Unable to build the PDF report.',
         isError: true,
@@ -461,7 +412,7 @@ export default function App() {
           <div className="preview-shell">
             {!selectedFiles.length ? (
               <div className="empty-preview">Preview will appear here.</div>
-          ) : (
+            ) : (
               <div className="thumb-grid">
                 {selectedFiles.map((file, index) => (
                   <div
@@ -526,11 +477,10 @@ export default function App() {
             <StatCard label="Engine" value={summary.engine || 'PP-StructureV3'} />
             <StatCard label="Pages" value={summary.page_count ?? 0} />
             <StatCard label="Tables" value={summary.table_count ?? 0} />
-            <StatCard label="Fields" value={summary.field_count ?? 0} />
             <StatCard label="Text Chars" value={summary.text_characters ?? 0} />
           </div>
           <p className="summary-note">
-            The backend returns markdown, structured fields, detected tables, and page-level metadata.
+            The backend returns raw OCR text, detected tables, and ML classification results.
           </p>
           <div className="summary-actions">
             <button
@@ -550,7 +500,6 @@ export default function App() {
 
       <section className="results-grid">
 
-        {/* SVM prediction card */}
         {result.svm_prediction && (
           <PredictionCard
             prediction={result.svm_prediction}
@@ -559,7 +508,6 @@ export default function App() {
           />
         )}
 
-        {/* LR prediction card */}
         {result.lr_prediction && (
           <PredictionCard
             prediction={result.lr_prediction}
@@ -580,28 +528,10 @@ export default function App() {
               <article key={`table-${index}`} className="mini-table-card">
                 <div className="mini-table-head">
                   <strong>{`Table ${index + 1}`}</strong>
-                  <span>{`Page ${(table.page_index ?? 0) + 1}`}</span>
                   <span>{`BBox ${Array.isArray(table.bbox) ? table.bbox.join(', ') : '0, 0, 0, 0'}`}</span>
                 </div>
                 <div className="table-shell">
-                  {(table.cells || []).length > 0 ? (
-                    <table className="results-table compact">
-                      <thead>
-                        <tr>
-                          <th>Field</th>
-                          <th>Value</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(table.cells || []).map((cell, cellIndex) => (
-                          <tr key={`cell-${cellIndex}`}>
-                            <td>{cell.field || ''}</td>
-                            <td>{cell.value || ''}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (table.rows || []).length > 0 ? (
+                  {(table.rows || []).length > 0 ? (
                     <table className="results-table compact generic-table">
                       <tbody>
                         {(table.rows || []).map((row, rowIndex) => (
@@ -634,54 +564,21 @@ export default function App() {
           </div>
         </div>
 
-        {hasStructuredFields ? (
-          <div className="panel fields-panel">
-            <div className="panel-header">
-              <div>
-                <p className="section-kicker">Parsed Values</p>
-                <h2>Structured Fields</h2>
-              </div>
-            </div>
-            <div className="table-shell">
-              <table className="results-table">
-                <thead>
-                  <tr>
-                    <th>Field</th>
-                    <th>Value</th>
-                    <th>Method</th>
-                    <th>Page</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.structured_fields.map((item, index) => (
-                    <tr key={`${item.field || 'field'}-${index}`}>
-                      <td>{item.field || ''}</td>
-                      <td>{item.value || ''}</td>
-                      <td>{item.method || ''}</td>
-                      <td>{String((item.page_index ?? 0) + 1)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : null}
-
         <div className="panel markdown-panel">
           <div className="panel-header">
             <div>
               <p className="section-kicker">Text Output</p>
-              <h2>Markdown</h2>
+              <h2>OCR Text</h2>
             </div>
             <button
               type="button"
               className="copy-btn"
-              onClick={() => copyText('markdown', result.markdown || result.raw_text || 'No text extracted.')}
+              onClick={() => copyText('raw_text', result.raw_text || 'No text extracted.')}
             >
-              {copiedKey === 'markdown' ? 'Copied!' : 'Copy'}
+              {copiedKey === 'raw_text' ? 'Copied!' : 'Copy'}
             </button>
           </div>
-          <pre className="code-block">{result.markdown || result.raw_text || 'No text extracted.'}</pre>
+          <pre className="code-block">{result.raw_text || 'No text extracted.'}</pre>
         </div>
 
         <div className="panel">
@@ -693,14 +590,14 @@ export default function App() {
             <button
               type="button"
               className="copy-btn"
-              onClick={() => copyText('json', JSON.stringify({ text: result.text, features: result.features }, null, 2))}
+              onClick={() => copyText('json', JSON.stringify({ features: result.features, tfidf: result.tfidf }, null, 2))}
             >
               {copiedKey === 'json' ? 'Copied!' : 'Copy'}
             </button>
           </div>
           <pre className="code-block">
-            {result.text || result.features
-              ? JSON.stringify({ text: result.text, features: result.features }, null, 2)
+            {result.features
+              ? JSON.stringify({ features: result.features, tfidf: result.tfidf }, null, 2)
               : JSON.stringify(result, null, 2)}
           </pre>
         </div>
@@ -724,10 +621,8 @@ function PredictionCard({ prediction, title, kicker }) {
   const isUnknown = prediction.label === 'Unknown';
   const isLowConf = prediction.confidence < 0.6;
   const confPct   = (prediction.confidence * 100).toFixed(1);
-
-  const probs    = Object.entries(prediction.all_probs || {})
-                     .sort((a, b) => b[1] - a[1]);
-  const topClass = probs[0]?.[0];
+  const probs     = Object.entries(prediction.all_probs || {}).sort((a, b) => b[1] - a[1]);
+  const topClass  = probs[0]?.[0];
 
   return (
     <div className="panel pred-card">
@@ -738,7 +633,6 @@ function PredictionCard({ prediction, title, kicker }) {
         </div>
       </div>
       <div className="pred-layout">
-
         <div className="pred-main">
           <div className={`pred-label${isUnknown ? ' unknown' : ''}`}>
             {isUnknown ? '— Unknown —' : prediction.label}
@@ -746,13 +640,9 @@ function PredictionCard({ prediction, title, kicker }) {
           <div className={`pred-confidence${isLowConf ? ' low' : ''}`}>
             {confPct}% confidence
           </div>
-          {isUnknown && (
-            <div className="pred-threshold-note">Below 60% threshold</div>
-          )}
+          {isUnknown && <div className="pred-threshold-note">Below 60% threshold</div>}
         </div>
-
         <div className="pred-divider" />
-
         <div className="pred-probs">
           {probs.map(([name, prob]) => {
             const pct   = (prob * 100).toFixed(1);
@@ -773,17 +663,113 @@ function PredictionCard({ prediction, title, kicker }) {
             );
           })}
         </div>
-
       </div>
     </div>
   );
 }
 
-function isSupportedFile(file) {
-  if (!file) {
-    return false;
+// ---------------------------------------------------------------------------
+// Data helpers
+// ---------------------------------------------------------------------------
+
+function normalizeRunResult(result) {
+  return {
+    source:         result.source || '',
+    summary:        normalizeSummary(result.summary),
+    raw_text:       result.raw_text || '',
+    tables:         Array.isArray(result.tables) ? result.tables : [],
+    processing:     result.processing || null,
+    svm_prediction: result.svm_prediction || null,
+    lr_prediction:  result.lr_prediction  || null,
+    features:       result.features || null,
+    tfidf:          result.tfidf    || null,
+  };
+}
+
+function normalizeSummary(summary) {
+  return { ...EMPTY_SUMMARY, ...(summary || {}) };
+}
+
+function mergeResults(results) {
+  if (results.length === 1) {
+    return { ...results[0], documents: results };
   }
 
+  const textParts = results.map((r) => {
+    const source = r.source || '';
+    const text   = r.raw_text || '';
+    return source ? `### ${source}\n\n${text}` : text;
+  });
+
+  return {
+    source:         results.map((r) => r.source).join(', '),
+    summary: {
+      engine:          'PP-StructureV3',
+      page_count:      results.reduce((sum, r) => sum + (r.summary?.page_count      ?? 0), 0),
+      table_count:     results.reduce((sum, r) => sum + (r.summary?.table_count     ?? 0), 0),
+      text_characters: results.reduce((sum, r) => sum + (r.summary?.text_characters ?? 0), 0),
+    },
+    raw_text:       textParts.join('\n\n---\n\n'),
+    tables:         results.flatMap((r) => r.tables || []),
+    processing:     results[0]?.processing || null,
+    svm_prediction: null,
+    lr_prediction:  null,
+    documents:      results,
+  };
+}
+
+function getDocumentEntries(result) {
+  if (Array.isArray(result.documents) && result.documents.length) {
+    return result.documents;
+  }
+  return [result];
+}
+
+function dedupeTables(tables) {
+  const seen = new Set();
+  return (tables || []).filter((table) => {
+    const rows = Array.isArray(table.rows) ? table.rows : [];
+    const signature = JSON.stringify(rows.slice(0, 6));
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return rows.length > 0;
+  });
+}
+
+function matchFilesToDocuments(files, documents) {
+  const nameBuckets = new Map();
+  const usedIndexes = new Set();
+
+  files.forEach((file, index) => {
+    const bucket = nameBuckets.get(file.name) || [];
+    bucket.push(index);
+    nameBuckets.set(file.name, bucket);
+  });
+
+  return documents.map((document) => {
+    const bucket = nameBuckets.get(document.source) || [];
+    while (bucket.length > 0) {
+      const index = bucket.shift();
+      if (!usedIndexes.has(index)) {
+        usedIndexes.add(index);
+        return files[index];
+      }
+    }
+    const fallbackIndex = files.findIndex((_, index) => !usedIndexes.has(index));
+    if (fallbackIndex >= 0) {
+      usedIndexes.add(fallbackIndex);
+      return files[fallbackIndex];
+    }
+    return null;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// File helpers
+// ---------------------------------------------------------------------------
+
+function isSupportedFile(file) {
+  if (!file) return false;
   const name = file.name.toLowerCase();
   return file.type.startsWith('image/')
     || file.type === 'application/pdf'
@@ -801,30 +787,22 @@ function isPdfFile(file) {
 }
 
 function getDroppedFiles(dataTransfer) {
-  if (!dataTransfer) {
-    return [];
-  }
-
+  if (!dataTransfer) return [];
   if (dataTransfer.items?.length) {
     return Array.from(dataTransfer.items)
       .filter((item) => item.kind === 'file')
       .map((item) => item.getAsFile())
       .filter(Boolean);
   }
-
   return Array.from(dataTransfer.files || []);
 }
 
 function getFileMeta(files) {
-  if (!files.length) {
-    return 'No file selected.';
-  }
-
+  if (!files.length) return 'No file selected.';
   if (files.length === 1) {
     const [file] = files;
     return `${file.name} • ${formatBytes(file.size)}${file.type ? ` • ${file.type}` : ''}`;
   }
-
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   return `${files.length} files selected • ${formatBytes(totalBytes)} total • select a row to preview`;
 }
@@ -850,20 +828,19 @@ function FileIcon({ file }) {
   );
 }
 
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return '0 B';
-  }
+// ---------------------------------------------------------------------------
+// Formatting
+// ---------------------------------------------------------------------------
 
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB'];
   let value = bytes;
   let unitIndex = 0;
-
   while (value >= 1024 && unitIndex < units.length - 1) {
     value /= 1024;
     unitIndex += 1;
   }
-
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
@@ -874,569 +851,19 @@ function formatDuration(milliseconds) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function mergeResults(results) {
-  const normalizedResults = results.map(normalizeRunResult);
-  let documents = reindexDocuments(normalizedResults.flatMap((result) => result.documents || []));
-  let normalizedDocuments = documents
-    .map((document) => document.normalized_document)
-    .filter(Boolean);
-  let normalizedCase = mergeNormalizedDocuments(normalizedDocuments);
-  documents = reconcileDocumentsWithCaseFacts(documents, normalizedCase);
-  normalizedDocuments = documents
-    .map((document) => document.normalized_document)
-    .filter(Boolean);
-  normalizedCase = mergeNormalizedDocuments(normalizedDocuments);
-
-  if (normalizedResults.length === 1) {
-    return {
-      ...reindexResultDocuments(normalizedResults[0], documents),
-      documents,
-      normalized_case: normalizedCase,
-    };
-  }
-
-  const markdownParts = normalizedResults.map((result) => {
-    const source = result.source || '';
-    const markdown = result.markdown || result.raw_text || '';
-    return source ? `### ${source}\n\n${markdown}` : markdown;
-  });
-
-  const firstProcessing = normalizedResults[0]?.processing || null;
-  const mergedProcessing = firstProcessing
-    ? {
-        ...firstProcessing,
-        downscaled_file_count: normalizedResults.filter((r) => r.processing?.downscaled).length,
-      }
-    : null;
-
-  return {
-    source: normalizedResults.map((result) => result.source).join(', '),
-    summary: {
-      engine: 'PP-StructureV3',
-      page_count: normalizedResults.reduce((sum, result) => sum + (result.summary?.page_count ?? 0), 0),
-      table_count: normalizedResults.reduce((sum, result) => sum + (result.summary?.table_count ?? 0), 0),
-      field_count: normalizedResults.reduce((sum, result) => sum + (result.summary?.field_count ?? 0), 0),
-      text_characters: normalizedResults.reduce((sum, result) => sum + (result.summary?.text_characters ?? 0), 0),
-    },
-    markdown: markdownParts.join('\n\n---\n\n'),
-    raw_text: markdownParts.join('\n\n---\n\n'),
-    structured_fields: normalizedResults.flatMap((result) => result.structured_fields || []),
-    tables: normalizedResults.flatMap((result) => result.tables || []),
-    pages: normalizedResults.flatMap((result) => result.pages || []),
-    processing: mergedProcessing,
-    documents,
-    normalized_case: normalizedCase,
-  };
-}
-
-function normalizeRunResult(result) {
-  const normalizedDocuments = Array.isArray(result.documents) && result.documents.length
-    ? result.documents.map(normalizeDocument)
-    : [normalizeDocument(result)];
-
-  return {
-    ...result,
-    summary: normalizeSummary(result.summary),
-    structured_fields: Array.isArray(result.structured_fields) ? result.structured_fields : [],
-    tables: Array.isArray(result.tables) ? result.tables : [],
-    pages: Array.isArray(result.pages) ? result.pages : [],
-    markdown: result.markdown || result.raw_text || '',
-    raw_text: result.raw_text || result.markdown || '',
-    raw_document: normalizeRawDocument(result.raw_document, result),
-    normalized_document: normalizeNormalizedDocument(result.normalized_document, result),
-    documents: normalizedDocuments,
-    svm_prediction: result.svm_prediction || null,
-    lr_prediction:  result.lr_prediction  || null,
-  };
-}
-
-function normalizeDocument(document) {
-  return {
-    source: document.source || 'Untitled source',
-    summary: normalizeSummary(document.summary),
-    structured_fields: Array.isArray(document.structured_fields) ? document.structured_fields : [],
-    tables: Array.isArray(document.tables) ? document.tables : [],
-    pages: Array.isArray(document.pages) ? document.pages : [],
-    markdown: document.markdown || document.raw_text || '',
-    raw_text: document.raw_text || document.markdown || '',
-    processing: document.processing || null,
-    raw_document: normalizeRawDocument(document.raw_document, document),
-    normalized_document: normalizeNormalizedDocument(document.normalized_document, document),
-  };
-}
-
-function normalizeSummary(summary) {
-  return {
-    ...EMPTY_SUMMARY,
-    ...(summary || {}),
-  };
-}
-
-function normalizeNormalizedDocument(normalizedDocument, document) {
-  if (!normalizedDocument || typeof normalizedDocument !== 'object') {
-    return null;
-  }
-
-  const metadata = normalizedDocument.metadata || {};
-  return {
-    image_id: normalizedDocument.image_id || getImageId(document.source),
-    metadata: {
-      filename: metadata.filename || document.source || 'Untitled source',
-      page_number: metadata.page_number ?? 1,
-      ocr_mode: metadata.ocr_mode || document.processing?.ocr_mode_label || document.processing?.ocr_mode || '',
-      run_timestamp: metadata.run_timestamp || document.processing?.run_timestamp || '',
-    },
-    document_context: normalizeKeyFacts(normalizedDocument.document_context),
-    key_facts: normalizeKeyFacts(normalizedDocument.key_facts),
-    tables: normalizeNormalizedTables(normalizedDocument.tables),
-    ocr_text: Array.isArray(normalizedDocument.ocr_text)
-      ? normalizedDocument.ocr_text.filter(Boolean)
-      : [],
-    filtered_noise: Array.isArray(normalizedDocument.filtered_noise)
-      ? normalizedDocument.filtered_noise.filter(Boolean)
-      : [],
-  };
-}
-
-function normalizeRawDocument(rawDocument, document) {
-  if (!rawDocument || typeof rawDocument !== 'object') {
-    return null;
-  }
-
-  const metadata = rawDocument.metadata || {};
-  return {
-    image_id: rawDocument.image_id || getImageId(document.source),
-    metadata: {
-      filename: metadata.filename || document.source || 'Untitled source',
-      page_number: metadata.page_number ?? 1,
-      ocr_mode: metadata.ocr_mode || document.processing?.ocr_mode_label || document.processing?.ocr_mode || '',
-      run_timestamp: metadata.run_timestamp || document.processing?.run_timestamp || '',
-    },
-    blocks: Array.isArray(rawDocument.blocks) ? rawDocument.blocks.map((block) => normalizeRawBlock(block)) : [],
-  };
-}
-
-function normalizeRawBlock(block) {
-  const type = block?.type || 'text';
-  if (type === 'table') {
-    return {
-      type: 'table',
-      title: block?.title || 'Table',
-      headers: Array.isArray(block?.headers) ? block.headers : [],
-      rows: Array.isArray(block?.rows) ? block.rows : [],
-    };
-  }
-  return {
-    type,
-    text: block?.text || '',
-  };
-}
-
-function normalizeKeyFacts(keyFacts) {
-  const facts = {};
-  Object.entries(keyFacts || {}).forEach(([key, value]) => {
-    if (key && value) {
-      facts[key] = value;
-    }
-  });
-  return facts;
-}
-
-function normalizeNormalizedTables(tables) {
-  return Array.isArray(tables) ? tables
-    .map((table) => ({
-      table_id: table?.table_id || '',
-      title: table?.title || 'Table',
-      columns: Array.isArray(table?.columns) ? table.columns : [],
-      rows: Array.isArray(table?.rows) ? table.rows : [],
-    }))
-    .filter((table) => table.columns.length > 0 || table.rows.length > 0) : [];
-}
-
-function normalizePermId(value) {
-  const normalized = String(value || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
-  if (normalized.startsWith('DOM')) {
-    return `DCM${normalized.slice(3)}`;
-  }
-  return normalized;
-}
-
-function looksLikeClientName(value) {
-  return /^[A-Za-z][A-Za-z' -]+(?: [A-Za-z][A-Za-z' -]+){1,3}$/.test(String(value || '').trim());
-}
-
-function looksLikeAddress(value) {
-  return /\b(?:Street|St\.?|Avenue|Ave\.?|Road|Rd\.?|Drive|Dr\.?|Lane|Ln\.?|Court|Ct\.?|Boulevard|Blvd\.?|Way)\b/i.test(String(value || ''));
-}
-
-function isSimilarPermId(left, right) {
-  const a = normalizePermId(left);
-  const b = normalizePermId(right);
-  if (!a || !b || a.length !== b.length) {
-    return false;
-  }
-
-  let differences = 0;
-  for (let index = 0; index < a.length; index += 1) {
-    if (a[index] !== b[index]) {
-      differences += 1;
-      if (differences > 2) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-function scoreDocumentStrength(document) {
-  return Object.keys(document?.document_context || {}).length * 40
-    + Object.keys(document?.key_facts || {}).length * 20
-    + (document?.tables || []).length * 15;
-}
-
-function scoreKeyFactCandidate(key, value, document) {
-  let score = scoreDocumentStrength(document);
-  if (!value) {
-    return score;
-  }
-
-  if (key === 'PERM ID') {
-    if (/^[A-Z]{3}\d[A-Z0-9-]{5,}$/.test(value)) {
-      score += 20;
-    }
-    if (value.startsWith('DCM')) {
-      score += 10;
-    }
-  } else if (key === 'Client Name' && looksLikeClientName(value)) {
-    score += 20;
-  } else if (key === 'Address' && looksLikeAddress(value)) {
-    score += 20;
-  } else if ((key === 'Born' || key === 'DOB') && /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(value)) {
-    score += 10;
-  }
-
-  return score;
-}
-
-function chooseMergedKeyFacts(documents) {
-  const bestFacts = {};
-  const bestScores = {};
-
-  documents.forEach((document) => {
-    Object.entries(document.key_facts || {}).forEach(([key, rawValue]) => {
-      const value = key === 'PERM ID' ? normalizePermId(rawValue) : String(rawValue || '').trim();
-      if (!key || !value) {
-        return;
-      }
-
-      const score = scoreKeyFactCandidate(key, value, document);
-      if (bestScores[key] == null || score > bestScores[key]) {
-        bestScores[key] = score;
-        bestFacts[key] = value;
-      }
-    });
-  });
-
-  return bestFacts;
-}
-
-function reconcileParticipantIdentityRows(rows, keyFacts) {
-  return (rows || []).map((row) => {
-    const nextRow = { ...row };
-
-    if (nextRow['PERM ID']) {
-      nextRow['PERM ID'] = normalizePermId(nextRow['PERM ID']);
-    }
-    if (keyFacts['PERM ID'] && (!nextRow['PERM ID'] || isSimilarPermId(nextRow['PERM ID'], keyFacts['PERM ID']))) {
-      nextRow['PERM ID'] = keyFacts['PERM ID'];
-    }
-    if ((!nextRow.Participant || !looksLikeClientName(nextRow.Participant)) && keyFacts['Client Name']) {
-      nextRow.Participant = keyFacts['Client Name'];
-    }
-    if (!nextRow.Gender && keyFacts.Gender) {
-      nextRow.Gender = keyFacts.Gender;
-    }
-    if (!nextRow.DOB && keyFacts.Born) {
-      nextRow.DOB = keyFacts.Born;
-    }
-    if (!nextRow.Address && keyFacts.Address) {
-      nextRow.Address = keyFacts.Address;
-    }
-
-    return nextRow;
-  });
-}
-
-function reconcileNormalizedTablesWithCaseFacts(tables, keyFacts) {
-  return (tables || []).map((table) => {
-    if (table.table_id !== 'participant_identity') {
-      return table;
-    }
-
-    return {
-      ...table,
-      title: table.title || 'Participant Data',
-      rows: reconcileParticipantIdentityRows(table.rows, keyFacts),
-    };
-  });
-}
-
-function reconcileDocumentsWithCaseFacts(documents, normalizedCase) {
-  if (!normalizedCase?.key_facts) {
-    return documents;
-  }
-
-  return documents.map((document) => {
-    const normalizedDocument = document.normalized_document;
-    if (!normalizedDocument) {
-      return document;
-    }
-
-    const reconciledTables = reconcileNormalizedTablesWithCaseFacts(
-      normalizedDocument.tables,
-      normalizedCase.key_facts,
-    );
-    const hasParticipantIdentity = reconciledTables.some((table) => table.table_id === 'participant_identity');
-    const keyFacts = {
-      ...normalizedDocument.key_facts,
-    };
-
-    if (keyFacts['PERM ID']) {
-      keyFacts['PERM ID'] = normalizePermId(keyFacts['PERM ID']);
-    }
-    if (normalizedCase.key_facts['PERM ID'] && (!keyFacts['PERM ID'] || isSimilarPermId(keyFacts['PERM ID'], normalizedCase.key_facts['PERM ID']))) {
-      keyFacts['PERM ID'] = normalizedCase.key_facts['PERM ID'];
-    }
-    if (hasParticipantIdentity && normalizedCase.key_facts['Client Name'] && !keyFacts['Client Name']) {
-      keyFacts['Client Name'] = normalizedCase.key_facts['Client Name'];
-    }
-    if (hasParticipantIdentity && normalizedCase.key_facts.Address && !keyFacts.Address) {
-      keyFacts.Address = normalizedCase.key_facts.Address;
-    }
-    if (hasParticipantIdentity && normalizedCase.key_facts.Gender && !keyFacts.Gender) {
-      keyFacts.Gender = normalizedCase.key_facts.Gender;
-    }
-    if (hasParticipantIdentity && normalizedCase.key_facts.Born && !keyFacts.Born) {
-      keyFacts.Born = normalizedCase.key_facts.Born;
-    }
-
-    return {
-      ...document,
-      normalized_document: {
-        ...normalizedDocument,
-        key_facts: keyFacts,
-        tables: reconciledTables,
-      },
-    };
-  });
-}
-
-function mergeNormalizedDocuments(documents) {
-  if (!documents.length) {
-    return null;
-  }
-
-  const structuredDocuments = documents.filter(isStructuredNormalizedDocument);
-  const firstMetadata = documents[0]?.metadata || {};
-
-  const documentContext = {};
-  structuredDocuments.forEach((document) => {
-    Object.entries(document.document_context || {}).forEach(([key, value]) => {
-      if (!documentContext[key] && value) {
-        documentContext[key] = value;
-      }
-    });
-  });
-
-  const keyFacts = chooseMergedKeyFacts(structuredDocuments);
-
-  const tables = [];
-  const seenTables = new Set();
-  structuredDocuments.forEach((document) => {
-    const reconciledTables = reconcileNormalizedTablesWithCaseFacts(document.tables, keyFacts);
-    reconciledTables.forEach((table) => {
-      const signature = JSON.stringify({
-        table_id: table.table_id,
-        title: table.title,
-        columns: table.columns,
-        rows: table.rows,
-      });
-      if (seenTables.has(signature)) {
-        return;
-      }
-      seenTables.add(signature);
-      tables.push(table);
-    });
-  });
-
-  const ocrText = dedupeLines(documents.flatMap((document) => document.ocr_text || []));
-  const filteredNoise = dedupeLines(structuredDocuments.flatMap((document) => document.filtered_noise || []));
-
-  return {
-    metadata: {
-      filenames: documents.map((document) => document.metadata?.filename).filter(Boolean),
-      page_count: documents.length,
-      ocr_mode: firstMetadata.ocr_mode || '',
-      run_timestamp: firstMetadata.run_timestamp || '',
-    },
-    image_ids: documents.map((document) => document.image_id).filter(Boolean),
-    document_context: documentContext,
-    key_facts: keyFacts,
-    tables,
-    ocr_text: ocrText,
-    filtered_noise: filteredNoise,
-  };
-}
-
-function isStructuredNormalizedDocument(document) {
-  return Boolean(
-    Object.keys(document?.document_context || {}).length
-    || Object.keys(document?.key_facts || {}).length
-    || (document?.tables || []).length,
-  );
-}
-
-function dedupeLines(lines) {
-  const seen = new Set();
-  return (lines || []).filter((line) => {
-    if (!line) {
-      return false;
-    }
-    const signature = String(line).trim().toLowerCase();
-    if (!signature || seen.has(signature)) {
-      return false;
-    }
-    seen.add(signature);
-    return true;
-  });
-}
-
-function reindexDocuments(documents) {
-  return documents.map((document, index) => {
-    const pageNumber = index + 1;
-    return {
-      ...document,
-      raw_document: reindexRawDocument(document.raw_document, document, pageNumber),
-      normalized_document: reindexNormalizedDocument(document.normalized_document, document, pageNumber),
-    };
-  });
-}
-
-function reindexResultDocuments(result, documents) {
-  if (!documents.length) {
-    return result;
-  }
-
-  return {
-    ...result,
-    raw_document: reindexRawDocument(result.raw_document, result, 1),
-    normalized_document: reindexNormalizedDocument(result.normalized_document, result, 1),
-  };
-}
-
-function reindexRawDocument(rawDocument, document, pageNumber) {
-  if (!rawDocument) {
-    return null;
-  }
-  return {
-    ...rawDocument,
-    image_id: rawDocument.image_id || getImageId(document.source),
-    metadata: {
-      ...(rawDocument.metadata || {}),
-      filename: rawDocument.metadata?.filename || document.source || 'Untitled source',
-      page_number: pageNumber,
-      ocr_mode: rawDocument.metadata?.ocr_mode || document.processing?.ocr_mode_label || document.processing?.ocr_mode || '',
-      run_timestamp: rawDocument.metadata?.run_timestamp || document.processing?.run_timestamp || '',
-    },
-  };
-}
-
-function reindexNormalizedDocument(normalizedDocument, document, pageNumber) {
-  if (!normalizedDocument) {
-    return null;
-  }
-  return {
-    ...normalizedDocument,
-    image_id: normalizedDocument.image_id || getImageId(document.source),
-    metadata: {
-      ...(normalizedDocument.metadata || {}),
-      filename: normalizedDocument.metadata?.filename || document.source || 'Untitled source',
-      page_number: pageNumber,
-      ocr_mode: normalizedDocument.metadata?.ocr_mode || document.processing?.ocr_mode_label || document.processing?.ocr_mode || '',
-      run_timestamp: normalizedDocument.metadata?.run_timestamp || document.processing?.run_timestamp || '',
-    },
-  };
-}
-
-function getImageId(source) {
-  const filename = String(source || 'document');
-  return filename.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '');
-}
-
-function getDocumentEntries(result) {
-  if (Array.isArray(result.documents) && result.documents.length) {
-    return result.documents;
-  }
-
-  if (result?.source || result?.markdown || result?.raw_text) {
-    return [normalizeDocument(result)];
-  }
-
-  return [];
-}
-
-function matchFilesToDocuments(files, documents) {
-  const nameBuckets = new Map();
-  const usedIndexes = new Set();
-
-  files.forEach((file, index) => {
-    const bucket = nameBuckets.get(file.name) || [];
-    bucket.push(index);
-    nameBuckets.set(file.name, bucket);
-  });
-
-  return documents.map((document) => {
-    const bucket = nameBuckets.get(document.source) || [];
-    while (bucket.length > 0) {
-      const index = bucket.shift();
-      if (!usedIndexes.has(index)) {
-        usedIndexes.add(index);
-        return files[index];
-      }
-    }
-
-    const fallbackIndex = files.findIndex((_, index) => !usedIndexes.has(index));
-    if (fallbackIndex >= 0) {
-      usedIndexes.add(fallbackIndex);
-      return files[fallbackIndex];
-    }
-
-    return null;
-  });
-}
+// ---------------------------------------------------------------------------
+// PDF report
+// ---------------------------------------------------------------------------
 
 async function buildReportPdf({ documents, files, summary, lastRunMs, modeLabel }) {
-  const pdf = new jsPDF({
-    orientation: 'portrait',
-    unit: 'pt',
-    format: 'a4',
-    compress: true,
-  });
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 42;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
+  const pageWidth    = pdf.internal.pageSize.getWidth();
+  const pageHeight   = pdf.internal.pageSize.getHeight();
+  const margin       = 42;
   const contentWidth = pageWidth - (margin * 2);
-  const generatedAt = new Date().toLocaleString();
+  const generatedAt  = new Date().toLocaleString();
 
-  drawReportCover(pdf, {
-    margin,
-    contentWidth,
-    summary,
-    lastRunMs,
-    generatedAt,
-    modeLabel,
-    documentCount: documents.length,
-  });
+  drawReportCover(pdf, { margin, contentWidth, summary, lastRunMs, generatedAt, modeLabel, documentCount: documents.length });
 
   for (let index = 0; index < documents.length; index += 1) {
     pdf.addPage();
@@ -1475,18 +902,15 @@ function drawReportCover(pdf, { margin, contentWidth, summary, lastRunMs, genera
   pdf.text(`Generated ${generatedAt}`, margin + 22, y + 82);
   pdf.text(`Mode ${modeLabel}`, margin + 22, y + 100);
   pdf.text(`Files ${documentCount}`, margin + 22, y + 118);
-  if (lastRunMs > 0) {
-    pdf.text(`Run time ${formatDuration(lastRunMs)}`, margin + 160, y + 100);
-  }
+  if (lastRunMs > 0) pdf.text(`Run time ${formatDuration(lastRunMs)}`, margin + 160, y + 100);
 
   y += 164;
 
   const stats = [
-    ['Engine', summary.engine || 'PP-StructureV3'],
-    ['Pages', String(summary.page_count ?? 0)],
-    ['Tables', String(summary.table_count ?? 0)],
-    ['Fields', String(summary.field_count ?? 0)],
-    ['Text Chars', String(summary.text_characters ?? 0)],
+    ['Engine',     summary.engine || 'PP-StructureV3'],
+    ['Pages',      String(summary.page_count      ?? 0)],
+    ['Tables',     String(summary.table_count      ?? 0)],
+    ['Text Chars', String(summary.text_characters  ?? 0)],
   ];
 
   stats.forEach(([label, value], index) => {
@@ -1506,26 +930,6 @@ function drawReportCover(pdf, { margin, contentWidth, summary, lastRunMs, genera
     pdf.setTextColor(22, 34, 59);
     pdf.setFontSize(19);
     pdf.text(value, cardX + 16, cardY + 50);
-  });
-
-  y += 264;
-
-  pdf.setTextColor(22, 34, 59);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(13);
-  pdf.text('Report Layout', margin, y);
-
-  const layoutCopy = [
-    'Each following page keeps the source screenshot close to a cleaned, readable OCR summary.',
-    'Structured fields are shown first when available, followed by table highlights and readable page text.',
-  ];
-  y += 20;
-  drawWrappedParagraphs(pdf, layoutCopy, {
-    x: margin,
-    y,
-    maxWidth: contentWidth,
-    pageHeight: pdf.internal.pageSize.getHeight(),
-    margin,
   });
 }
 
@@ -1547,17 +951,16 @@ async function drawDocumentPage(pdf, { document, file, index, total, margin, con
   pdf.setFontSize(10.5);
   pdf.setTextColor(89, 101, 125);
   pdf.text(buildDocumentMetaLine(document), margin, y);
-
   y += 24;
 
   if (file && !isPdfFile(file)) {
     try {
-      const image = await prepareImageForPdf(file);
-      const imageBoxHeight = 248;
-      const imageScale = Math.min(contentWidth / image.width, imageBoxHeight / image.height, 1);
-      const drawWidth = image.width * imageScale;
-      const drawHeight = image.height * imageScale;
-      const drawX = margin + ((contentWidth - drawWidth) / 2);
+      const image       = await prepareImageForPdf(file);
+      const imageBoxH   = 248;
+      const imageScale  = Math.min(contentWidth / image.width, imageBoxH / image.height, 1);
+      const drawWidth   = image.width  * imageScale;
+      const drawHeight  = image.height * imageScale;
+      const drawX       = margin + ((contentWidth - drawWidth) / 2);
 
       pdf.setFillColor(255, 255, 255);
       pdf.setDrawColor(221, 229, 242);
@@ -1566,30 +969,24 @@ async function drawDocumentPage(pdf, { document, file, index, total, margin, con
       y += drawHeight + 40;
     } catch {
       y = drawReportPlaceholder(pdf, {
-        x: margin,
-        y,
-        width: contentWidth,
-        height: 116,
+        x: margin, y, width: contentWidth, height: 116,
         title: 'Image preview unavailable',
         subtitle: 'The OCR summary below is still included in this report.',
       });
     }
   } else {
     y = drawReportPlaceholder(pdf, {
-      x: margin,
-      y,
-      width: contentWidth,
-      height: 116,
+      x: margin, y, width: contentWidth, height: 116,
       title: file ? 'PDF source attached to OCR run' : 'Source preview unavailable',
-      subtitle: file ? `${file.name} • preview omitted from in-browser report export` : 'Only OCR text is available for this page.',
+      subtitle: file
+        ? `${file.name} • preview omitted from in-browser report export`
+        : 'Only OCR text is available for this page.',
     });
   }
 
   const sections = buildReadableSections(document);
-
   sections.forEach((section) => {
     y = ensurePdfRoom(pdf, y, 18, { pageHeight, margin });
-
     pdf.setTextColor(22, 34, 59);
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(12.5);
@@ -1601,11 +998,7 @@ async function drawDocumentPage(pdf, { document, file, index, total, margin, con
         title: section.title,
         rows: section.rows,
         headerRowCount: section.headerRowCount || 0,
-        x: margin,
-        y,
-        width: contentWidth,
-        pageHeight,
-        margin,
+        x: margin, y, width: contentWidth, pageHeight, margin,
       });
       y += 8;
       return;
@@ -1614,15 +1007,74 @@ async function drawDocumentPage(pdf, { document, file, index, total, margin, con
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(10.5);
     pdf.setTextColor(42, 52, 73);
-    y = drawWrappedParagraphs(pdf, section.lines, {
-      x: margin,
-      y,
-      maxWidth: contentWidth,
-      pageHeight,
-      margin,
-    });
+    y = drawWrappedParagraphs(pdf, section.lines, { x: margin, y, maxWidth: contentWidth, pageHeight, margin });
     y += 6;
   });
+}
+
+function buildReadableSections(document) {
+  const sections      = [];
+  const tableSections = getTableSections(document.tables);
+  const textLines     = getReadableTextLines(document);
+
+  tableSections.forEach((section) => sections.push(section));
+
+  if (textLines.length > 0) {
+    sections.push({ title: 'Readable OCR', lines: textLines });
+  }
+
+  if (!sections.length) {
+    sections.push({
+      title: 'Readable OCR',
+      lines: ['No text was extracted for this source. The original screenshot above is included for context.'],
+    });
+  }
+
+  return sections;
+}
+
+function getTableSections(tables) {
+  return dedupeTables(tables).slice(0, 3).map((table, index) => {
+    const rows = (table.rows || [])
+      .map((row) => row.map((cell) => normalizeWhitespace(cell)))
+      .filter((row) => row.some(Boolean))
+      .slice(0, 10);
+
+    if (rows.length > 10) rows.push([`${(table.rows || []).length - 10} more row(s) not shown`]);
+
+    return { title: `Table ${index + 1}`, type: 'table', headerRowCount: 0, rows };
+  }).filter((section) => section.rows.length > 0);
+}
+
+function getReadableTextLines(document) {
+  const source = document.raw_text || '';
+  const seen   = new Set();
+
+  return extractReadableLines(source).filter((line) => {
+    if (!line || seen.has(line)) return false;
+    seen.add(line);
+    return true;
+  }).slice(0, 18);
+}
+
+function extractReadableLines(source) {
+  if (!source) return [];
+
+  return source.split(/\n{2,}/).flatMap((block) => {
+    const trimmed = block.trim();
+    if (!trimmed || trimmed === '---') return [];
+    const text = normalizeWhitespace(trimmed.replace(/^#+\s*/, ''));
+    return text ? [text] : [];
+  });
+}
+
+function buildDocumentMetaLine(document) {
+  const summary = document.summary || EMPTY_SUMMARY;
+  return [
+    `Pages ${summary.page_count ?? 0}`,
+    `Tables ${summary.table_count ?? 0}`,
+    `Text ${summary.text_characters ?? 0} chars`,
+  ].join(' • ');
 }
 
 function drawReportPlaceholder(pdf, { x, y, width, height, title, subtitle }) {
@@ -1645,93 +1097,68 @@ function drawReportPlaceholder(pdf, { x, y, width, height, title, subtitle }) {
 }
 
 function ensurePdfRoom(pdf, y, neededHeight, { pageHeight, margin }) {
-  if (y + neededHeight <= pageHeight - margin) {
-    return y;
-  }
-
+  if (y + neededHeight <= pageHeight - margin) return y;
   pdf.addPage();
   return margin;
 }
 
 function drawWrappedParagraphs(pdf, lines, { x, y, maxWidth, pageHeight, margin }) {
-  const paragraphs = lines.filter(Boolean);
-
-  paragraphs.forEach((line) => {
+  lines.filter(Boolean).forEach((line) => {
     const wrapped = pdf.splitTextToSize(line, maxWidth);
     wrapped.forEach((segment) => {
-      if (y > pageHeight - margin) {
-        pdf.addPage();
-        y = margin;
-      }
+      if (y > pageHeight - margin) { pdf.addPage(); y = margin; }
       pdf.text(segment, x, y);
       y += 14;
     });
     y += 6;
   });
-
   return y;
 }
 
-function drawPdfTable(pdf, {
-  title,
-  rows,
-  headerRowCount = 0,
-  x,
-  y,
-  width,
-  pageHeight,
-  margin,
-}) {
-  const normalizedRows = normalizePdfTableRows(rows);
-  if (!normalizedRows.length) {
-    return y;
-  }
+function drawPdfTable(pdf, { title, rows, headerRowCount = 0, x, y, width, pageHeight, margin }) {
+  const normalizedRows = (rows || [])
+    .map((row) => Array.isArray(row)
+      ? row.map((cell) => normalizeWhitespace(cell || ''))
+      : [normalizeWhitespace(row || '')])
+    .filter((row) => row.some(Boolean));
 
-  const columnCount = Math.max(...normalizedRows.map((row) => row.length), 1);
-  const tableRows = normalizedRows.map((row) => Array.from({ length: columnCount }, (_, index) => normalizeWhitespace(row[index] || '')));
+  if (!normalizedRows.length) return y;
+
+  const columnCount  = Math.max(...normalizedRows.map((row) => row.length), 1);
+  const tableRows    = normalizedRows.map((row) => Array.from({ length: columnCount }, (_, i) => row[i] || ''));
   const columnWidths = getPdfColumnWidths(tableRows, width);
-  const fontSize = columnCount >= 8 ? 7 : columnCount >= 6 ? 7.6 : 8.5;
-  const lineHeight = fontSize * 1.34;
+  const fontSize     = columnCount >= 8 ? 7 : columnCount >= 6 ? 7.6 : 8.5;
+  const lineHeight   = fontSize * 1.34;
   const cellPaddingX = 6;
   const cellPaddingY = 5;
-  const wrappedRows = tableRows.map((row) => row.map((cell, columnIndex) => {
-    const wrapped = pdf.splitTextToSize(cell || ' ', Math.max(columnWidths[columnIndex] - (cellPaddingX * 2), 16));
-    return clampWrappedLines(wrapped, 6);
-  }));
+
+  const wrappedRows  = tableRows.map((row) =>
+    row.map((cell, ci) => clampWrappedLines(pdf.splitTextToSize(cell || ' ', Math.max(columnWidths[ci] - cellPaddingX * 2, 16)), 6))
+  );
   const headerRows = wrappedRows.slice(0, headerRowCount);
-  const bodyRows = wrappedRows.slice(headerRowCount);
+  const bodyRows   = wrappedRows.slice(headerRowCount);
 
   pdf.setFontSize(fontSize);
 
   const renderRow = (wrappedCells, rowY, isHeader) => {
-    const rowHeight = Math.max(...wrappedCells.map((lines) => Math.max(lines.length, 1))) * lineHeight + (cellPaddingY * 2);
+    const rowHeight = Math.max(...wrappedCells.map((lines) => Math.max(lines.length, 1))) * lineHeight + cellPaddingY * 2;
     let cursorX = x;
-
-    wrappedCells.forEach((lines, columnIndex) => {
-      const cellWidth = columnWidths[columnIndex];
+    wrappedCells.forEach((lines, ci) => {
+      const cellWidth = columnWidths[ci];
       pdf.setDrawColor(221, 229, 242);
-      if (isHeader) {
-        pdf.setFillColor(240, 244, 252);
-      } else {
-        pdf.setFillColor(255, 255, 255);
-      }
+      pdf.setFillColor(isHeader ? 240 : 255, isHeader ? 244 : 255, isHeader ? 252 : 255);
       pdf.rect(cursorX, rowY, cellWidth, rowHeight, 'FD');
-
       pdf.setTextColor(isHeader ? 89 : 42, isHeader ? 101 : 52, isHeader ? 125 : 73);
       pdf.setFont('helvetica', isHeader ? 'bold' : 'normal');
-      pdf.text(lines, cursorX + cellPaddingX, rowY + cellPaddingY + fontSize, {
-        baseline: 'alphabetic',
-      });
-
+      pdf.text(lines, cursorX + cellPaddingX, rowY + cellPaddingY + fontSize, { baseline: 'alphabetic' });
       cursorX += cellWidth;
     });
-
     return rowHeight;
   };
 
   const renderHeaderRows = () => {
     headerRows.forEach((wrappedCells) => {
-      const rowHeight = Math.max(...wrappedCells.map((lines) => Math.max(lines.length, 1))) * lineHeight + (cellPaddingY * 2);
+      const rowHeight = Math.max(...wrappedCells.map((lines) => Math.max(lines.length, 1))) * lineHeight + cellPaddingY * 2;
       y = ensurePdfRoom(pdf, y, rowHeight, { pageHeight, margin });
       renderRow(wrappedCells, y, true);
       y += rowHeight;
@@ -1741,21 +1168,17 @@ function drawPdfTable(pdf, {
   renderHeaderRows();
 
   bodyRows.forEach((wrappedCells) => {
-    const rowHeight = Math.max(...wrappedCells.map((lines) => Math.max(lines.length, 1))) * lineHeight + (cellPaddingY * 2);
-
+    const rowHeight = Math.max(...wrappedCells.map((lines) => Math.max(lines.length, 1))) * lineHeight + cellPaddingY * 2;
     if (y + rowHeight > pageHeight - margin) {
       pdf.addPage();
       y = margin;
-
       pdf.setTextColor(22, 34, 59);
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(12.5);
       pdf.text(`${title} (cont.)`, x, y);
       y += 18;
-
       renderHeaderRows();
     }
-
     renderRow(wrappedCells, y, false);
     y += rowHeight;
   });
@@ -1763,67 +1186,48 @@ function drawPdfTable(pdf, {
   return y;
 }
 
-function normalizePdfTableRows(rows) {
-  return (rows || [])
-    .map((row) => Array.isArray(row)
-      ? row.map((cell) => normalizeWhitespace(cell || ''))
-      : [normalizeWhitespace(row || '')])
-    .filter((row) => row.some(Boolean));
-}
-
 function getPdfColumnWidths(rows, totalWidth) {
   const columnCount = Math.max(...rows.map((row) => row.length), 1);
-  const weights = Array.from({ length: columnCount }, () => 1);
-
+  const weights     = Array.from({ length: columnCount }, () => 1);
   rows.forEach((row) => {
-    row.forEach((cell, index) => {
-      weights[index] = Math.max(weights[index], Math.min((cell || '').length, 36) || 1);
+    row.forEach((cell, i) => {
+      weights[i] = Math.max(weights[i], Math.min((cell || '').length, 36) || 1);
     });
   });
-
-  const totalWeight = weights.reduce((sum, value) => sum + value, 0);
-  const baseWidths = weights.map((weight) => (weight / totalWeight) * totalWidth);
-  const minWidth = Math.max(46, totalWidth / (columnCount * 1.7));
-  let widths = baseWidths.map((width) => Math.max(width, minWidth));
-  const widthSum = widths.reduce((sum, value) => sum + value, 0);
-
+  const totalWeight = weights.reduce((sum, v) => sum + v, 0);
+  const minWidth    = Math.max(46, totalWidth / (columnCount * 1.7));
+  let widths        = weights.map((w) => Math.max((w / totalWeight) * totalWidth, minWidth));
+  const widthSum    = widths.reduce((sum, v) => sum + v, 0);
   if (widthSum > totalWidth) {
     const scale = totalWidth / widthSum;
-    widths = widths.map((width) => width * scale);
+    widths = widths.map((w) => w * scale);
   } else if (widthSum < totalWidth) {
     widths[widths.length - 1] += totalWidth - widthSum;
   }
-
   return widths;
 }
 
 function clampWrappedLines(lines, maxLines) {
-  if (lines.length <= maxLines) {
-    return lines;
-  }
-
-  const visibleLines = lines.slice(0, maxLines);
-  visibleLines[maxLines - 1] = `${visibleLines[maxLines - 1].replace(/\s+$/, '')}…`;
-  return visibleLines;
+  if (lines.length <= maxLines) return lines;
+  const visible = lines.slice(0, maxLines);
+  visible[maxLines - 1] = `${visible[maxLines - 1].replace(/\s+$/, '')}…`;
+  return visible;
 }
 
 async function prepareImageForPdf(file) {
-  const dataUrl = await readFileAsDataUrl(file);
-  const image = await loadImage(dataUrl);
-  const canvas = document.createElement('canvas');
-  const width = image.naturalWidth || image.width;
-  const height = image.naturalHeight || image.height;
-  canvas.width = width;
-  canvas.height = height;
+  const dataUrl  = await readFileAsDataUrl(file);
+  const image    = await loadImage(dataUrl);
+  const canvas   = document.createElement('canvas');
+  const width    = image.naturalWidth || image.width;
+  const height   = image.naturalHeight || image.height;
+  canvas.width   = width;
+  canvas.height  = height;
 
   const context = canvas.getContext('2d');
-  if (!context) {
-    throw new Error('Unable to prepare the image for PDF export.');
-  }
-
+  if (!context) throw new Error('Unable to prepare the image for PDF export.');
   context.drawImage(image, 0, 0, width, height);
-  const format = getPdfImageFormat(file);
 
+  const format = getPdfImageFormat(file);
   return {
     dataUrl: format === 'JPEG' ? canvas.toDataURL('image/jpeg', 0.92) : canvas.toDataURL('image/png'),
     width,
@@ -1834,8 +1238,8 @@ async function prepareImageForPdf(file) {
 
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
+    const reader   = new FileReader();
+    reader.onload  = () => resolve(reader.result);
     reader.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
     reader.readAsDataURL(file);
   });
@@ -1843,217 +1247,15 @@ function readFileAsDataUrl(file) {
 
 function loadImage(dataUrl) {
   return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('Unable to load the uploaded image for the PDF report.'));
-    image.src = dataUrl;
+    const image    = new Image();
+    image.onload   = () => resolve(image);
+    image.onerror  = () => reject(new Error('Unable to load the uploaded image for the PDF report.'));
+    image.src      = dataUrl;
   });
 }
 
 function getPdfImageFormat(file) {
   return file.type === 'image/jpeg' || file.type === 'image/jpg' ? 'JPEG' : 'PNG';
-}
-
-function buildDocumentMetaLine(document) {
-  const summary = document.summary || EMPTY_SUMMARY;
-  return [
-    `Pages ${summary.page_count ?? 0}`,
-    `Tables ${summary.table_count ?? 0}`,
-    `Fields ${summary.field_count ?? 0}`,
-    `Text ${summary.text_characters ?? 0} chars`,
-  ].join(' • ');
-}
-
-function buildReadableSections(document) {
-  const sections = [];
-  const fieldRows = getFieldRows(document.structured_fields);
-  const tableSections = getTableSections(document.tables);
-  const textLines = getReadableTextLines(document);
-
-  if (fieldRows.length > 0) {
-    sections.push({
-      title: 'Structured Fields',
-      type: 'table',
-      headerRowCount: 1,
-      rows: [
-        ['Field', 'Value'],
-        ...fieldRows,
-      ],
-    });
-  }
-
-  tableSections.forEach((section) => {
-    sections.push(section);
-  });
-
-  if (textLines.length > 0) {
-    sections.push({
-      title: 'Readable OCR',
-      lines: textLines,
-    });
-  }
-
-  if (!sections.length) {
-    sections.push({
-      title: 'Readable OCR',
-      lines: ['No text was extracted for this source. The original screenshot above is included for context.'],
-    });
-  }
-
-  return sections;
-}
-
-function getFieldRows(fields) {
-  const seen = new Set();
-
-  return (fields || [])
-    .map((item) => {
-      const field = normalizeWhitespace(item.field || '');
-      const value = normalizeWhitespace(item.value || '');
-      if (!field && !value) {
-        return null;
-      }
-      return [field || 'Field', value || ''];
-    })
-    .filter((row) => {
-      const signature = JSON.stringify(row);
-      if (!row || seen.has(signature)) {
-        return false;
-      }
-      seen.add(signature);
-      return true;
-    })
-    .slice(0, 14);
-}
-
-function getTableSections(tables) {
-  return dedupeTables(tables).slice(0, 3).map((table, index) => {
-    const rows = Array.isArray(table.rows) ? table.rows : [];
-    const cells = Array.isArray(table.cells) ? table.cells : [];
-
-    if (cells.length > 0) {
-      const dataRows = cells
-        .map((cell) => {
-          const field = normalizeWhitespace(cell.field || '');
-          const value = normalizeWhitespace(cell.value || '');
-          if (!field && !value) {
-            return null;
-          }
-          return [field || 'Field', value || ''];
-        })
-        .filter(Boolean)
-        .slice(0, 12);
-
-      return {
-        title: `Table ${index + 1}`,
-        type: 'table',
-        headerRowCount: 1,
-        rows: [
-          ['Field', 'Value'],
-          ...dataRows,
-        ],
-      };
-    }
-
-    const tableRows = rows
-      .map((row) => row.map((cell) => normalizeWhitespace(cell)))
-      .filter((row) => row.some(Boolean))
-      .slice(0, 10);
-
-    if (rows.length > 10) {
-      tableRows.push([`${rows.length - 10} more row(s) not shown`]);
-    }
-
-    return {
-      title: `Table ${index + 1}`,
-      type: 'table',
-      headerRowCount: 0,
-      rows: tableRows,
-    };
-  }).filter((section) => section.rows.length > 0);
-}
-
-function dedupeTables(tables) {
-  const seen = new Set();
-
-  return (tables || []).filter((table) => {
-    const rows = Array.isArray(table.rows) ? table.rows : [];
-    const cells = Array.isArray(table.cells) ? table.cells : [];
-    const signature = JSON.stringify({
-      rows: rows.slice(0, 6),
-      cells: cells.slice(0, 12),
-    });
-
-    if (seen.has(signature)) {
-      return false;
-    }
-
-    seen.add(signature);
-    return rows.length > 0 || cells.length > 0;
-  });
-}
-
-function getReadableTextLines(document) {
-  const sources = Array.isArray(document.pages) && document.pages.length > 0
-    ? document.pages.map((page) => page.markdown || '')
-    : [document.markdown || document.raw_text || ''];
-
-  const seen = new Set();
-
-  return sources
-    .flatMap((source) => extractReadableLines(source))
-    .filter((line) => {
-      if (!line || seen.has(line)) {
-        return false;
-      }
-      seen.add(line);
-      return true;
-    })
-    .slice(0, 18);
-}
-
-function extractReadableLines(source) {
-  if (!source) {
-    return [];
-  }
-
-  return source
-    .split(/\n{2,}/)
-    .flatMap((block) => {
-      const trimmed = block.trim();
-      if (!trimmed || trimmed === '---') {
-        return [];
-      }
-
-      if (/<table[\s>]/i.test(trimmed)) {
-        return [];
-      }
-
-      if (/<[a-z][\s\S]*>/i.test(trimmed)) {
-        return extractLinesFromHtml(trimmed);
-      }
-
-      const text = normalizeWhitespace(trimmed.replace(/^#+\s*/, ''));
-      return text ? [text] : [];
-    });
-}
-
-function extractLinesFromHtml(html) {
-  const parser = new DOMParser();
-  const parsed = parser.parseFromString(`<body>${html}</body>`, 'text/html');
-  const rows = Array.from(parsed.querySelectorAll('tr'));
-
-  if (rows.length > 0) {
-    return rows
-      .map((row) => Array.from(row.querySelectorAll('th,td'))
-        .map((cell) => normalizeWhitespace(cell.textContent || ''))
-        .filter(Boolean)
-        .join(' | '))
-      .filter(Boolean);
-  }
-
-  const text = normalizeWhitespace(parsed.body.textContent || '');
-  return text ? [text] : [];
 }
 
 function normalizeWhitespace(value) {

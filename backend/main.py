@@ -53,7 +53,6 @@ async def ocr(
         result = run_ocr(
             contents,
             filename=file.filename,
-            content_type=file.content_type,
             mode=ocr_mode,
         )
     except ValueError as exc:
