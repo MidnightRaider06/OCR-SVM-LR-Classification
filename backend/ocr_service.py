@@ -43,20 +43,6 @@ table_engine = TableRecognitionPipelineV2(
     cpu_threads=8,
 )
 
-# ---------------------------------------------------------------------------
-# NLP — TF-IDF fitted once at import time
-# ---------------------------------------------------------------------------
-
-print("Fitting TF-IDF on background corpus...")
-_background_corpus = fetch_20newsgroups(subset="train").data
-_tfidf = TfidfVectorizer(
-    stop_words="english",
-    max_features=500,
-    ngram_range=(1, 1),
-    min_df=2,
-)
-_tfidf.fit(_background_corpus)
-print(f"TF-IDF vocabulary size: {len(_tfidf.vocabulary_)} terms")
 
 # ---------------------------------------------------------------------------
 # Saved classifiers — loaded once at import time
@@ -290,6 +276,7 @@ def _compute_tfidf(text: str, top_n: int = 20) -> dict:
     if not text.strip():
         return empty
     try:
+        _tfidf = _svm_tfidf or _lr_tfidf
         matrix = _tfidf.transform([text])
         vocab  = _tfidf.get_feature_names_out()
         scores = matrix.toarray()[0]

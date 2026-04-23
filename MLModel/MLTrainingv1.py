@@ -44,10 +44,11 @@ from sklearn.metrics import (
 )
 
 
-MODEL_SAVE_PATH1      = "../backend/lr_model_v1.joblib"
-MODEL_SAVE_PATH2      = "../backend/svm_model_v1.joblib"
-TRAIN_CSV            = "train.csv"
-TEST_CSV             = "test.csv"
+_DIR             = os.path.dirname(os.path.abspath(__file__))
+MODEL_SAVE_PATH1 = os.path.join(_DIR, "..", "backend", "lr_model_v1.joblib")
+MODEL_SAVE_PATH2 = os.path.join(_DIR, "..", "backend", "svm_model_v1.joblib")
+TRAIN_CSV        = os.path.join(_DIR, "train.csv")
+TEST_CSV         = os.path.join(_DIR, "test.csv")
 CONFIDENCE_THRESHOLD = 0.6   # below this → "Unknown"
 N_FOLDS              = 5     # number of CV folds — increase if you have more data
 
@@ -95,16 +96,15 @@ print(f"  Classes: {sorted(set(train_labels))}")
 #      making fold results directly comparable
 # ---------------------------------------------------------------------------
 
-print("\n[2/6] Fitting TF-IDF on background corpus (~11k news articles)...")
-corpus = fetch_20newsgroups(subset="train").data
-tfidf  = TfidfVectorizer(
+print("\n[2/6] Fitting TF-IDF on training data...")
+tfidf = TfidfVectorizer(
     stop_words="english",
-    max_features=500,
-    ngram_range=(1, 1),
-    min_df=2,
+    max_features=2000,
+    ngram_range=(1, 2),
+    min_df=1,
 )
-tfidf.fit(corpus)
-print(f"  Fitted on {len(corpus)} docs — vocabulary locked at {len(tfidf.vocabulary_)} terms")
+tfidf.fit(train_texts)
+print(f"  Fitted on {len(train_texts)} docs — vocabulary locked at {len(tfidf.vocabulary_)} terms")
 
 # ---------------------------------------------------------------------------
 # 3. Build full feature matrix from training data
@@ -256,6 +256,9 @@ lr_model = run_cv(
 # generalise — use those numbers, not the test CSV accuracy alone.
 # ---------------------------------------------------------------------------
 
+
+os.makedirs(os.path.dirname(MODEL_SAVE_PATH1), exist_ok=True)
+
 print("[5/6] Saving Logistic Regression model...")
 joblib.dump(
     {"model": lr_model, "tfidf": tfidf, "label_encoder": le},
@@ -266,7 +269,7 @@ print(f"  Contains   : LogisticRegression + TfidfVectorizer + LabelEncoder")
 print(f"  Trained on : all {len(X_train)} training samples")
 print()
 
-
+os.makedirs(os.path.dirname(MODEL_SAVE_PATH2), exist_ok=True)
 print("[6/6] Saving Logistic Regression model...")
 joblib.dump(
     {"model": svm_model, "tfidf": tfidf, "label_encoder": le},
